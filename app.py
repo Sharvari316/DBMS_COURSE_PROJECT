@@ -1041,27 +1041,31 @@ def render_grants_page(is_connected: bool):
                 )
                 if search_query.strip():
                     q = search_query.strip().lower()
+                    name_s = df["Grant Name"] if "Grant Name" in df.columns else df.get("GrantName", pd.Series([""] * len(df)))
+                    agency_s = df["Funding Agency"] if "Funding Agency" in df.columns else df.get("FundingAgency", pd.Series([""] * len(df)))
+                    proj_s = df["Funded Project"] if "Funded Project" in df.columns else df.get("ProjectName", pd.Series([""] * len(df)))
                     df = df[
-                        df["GrantName"].str.lower().str.contains(q, na=False)
-                        | df["FundingAgency"].str.lower().str.contains(q, na=False)
-                        | df["ProjectName"].str.lower().str.contains(q, na=False)
+                        name_s.astype(str).str.lower().str.contains(q, na=False)
+                        | agency_s.astype(str).str.lower().str.contains(q, na=False)
+                        | proj_s.astype(str).str.lower().str.contains(q, na=False)
                     ]
 
                 st.caption(f"Showing {len(df)} grant record(s)")
-                # Format currency for table
+                # Format currency for table display without creating duplicate columns
                 display_df = df.copy()
-                display_df["FormattedAmount"] = display_df["Amount"].apply(format_currency)
+                if "Amount" in display_df.columns:
+                    display_df["Amount"] = display_df["Amount"].apply(format_currency)
+
+                display_cols = [
+                    "Grant ID",
+                    "Grant Name",
+                    "Amount",
+                    "Funding Agency",
+                    "Project ID",
+                    "Funded Project",
+                ]
                 st.dataframe(
-                    display_df.rename(
-                        columns={
-                            "GrantID": "Grant ID",
-                            "GrantName": "Grant Name",
-                            "FormattedAmount": "Amount",
-                            "FundingAgency": "Funding Agency",
-                            "ProjectID": "Project ID",
-                            "ProjectName": "Funded Project",
-                        }
-                    )[["Grant ID", "Grant Name", "Amount", "Funding Agency", "Project ID", "Funded Project"]],
+                    display_df[display_cols],
                     use_container_width=True,
                     hide_index=True,
                 )
@@ -1143,7 +1147,10 @@ def render_grants_page(is_connected: bool):
             elif not projects:
                 st.error("No projects available for foreign key reference.")
             else:
-                grant_opts = {f"ID {g['GrantID']} - {g['GrantName']}": g for g in grants}
+                grant_opts = {
+                    f"ID {g.get('Grant ID', g.get('GrantID'))} - {g.get('Grant Name', g.get('GrantName'))}": g
+                    for g in grants
+                }
                 sel_g_lbl = st.selectbox(
                     "Select Grant to Edit", options=list(grant_opts.keys()), key="update_g_sel"
                 )
@@ -1155,18 +1162,22 @@ def render_grants_page(is_connected: bool):
 
                 # Find project index
                 curr_p_idx = 0
+                sel_proj_id = sel_g.get("Project ID", sel_g.get("ProjectID"))
                 for idx, (lbl, pid) in enumerate(proj_opts.items()):
-                    if pid == sel_g["ProjectID"]:
+                    if pid == sel_proj_id:
                         curr_p_idx = idx
                         break
 
                 with st.form("form_update_grant"):
+                    sel_grant_id = sel_g.get("Grant ID", sel_g.get("GrantID"))
                     st.number_input(
                         "Grant ID (Primary Key - Read Only)",
-                        value=sel_g["GrantID"],
+                        value=sel_grant_id,
                         disabled=True,
                     )
-                    u_gname = st.text_input("Grant Name *", value=sel_g["GrantName"])
+                    u_gname = st.text_input(
+                        "Grant Name *", value=sel_g.get("Grant Name", sel_g.get("GrantName"))
+                    )
 
                     col1, col2 = st.columns(2)
                     with col1:
@@ -1177,7 +1188,10 @@ def render_grants_page(is_connected: bool):
                             step=5000.0,
                             format="%.2f",
                         )
-                        u_agency = st.text_input("Funding Agency *", value=sel_g["FundingAgency"])
+                        u_agency = st.text_input(
+                            "Funding Agency *",
+                            value=sel_g.get("Funding Agency", sel_g.get("FundingAgency")),
+                        )
                     with col2:
                         u_proj = st.selectbox(
                             "Target Project (Project ID) *",
@@ -1196,7 +1210,7 @@ def render_grants_page(is_connected: bool):
                         else:
                             chosen_pid = proj_opts[u_proj]
                             success, msg = db.update_grant(
-                                sel_g["GrantID"],
+                                sel_grant_id,
                                 u_gname.strip(),
                                 float(u_amount),
                                 u_agency.strip(),
@@ -1218,19 +1232,25 @@ def render_grants_page(is_connected: bool):
             if not grants:
                 st.info("No grants available to delete.")
             else:
-                grant_opts = {f"ID {g['GrantID']} - {g['GrantName']}": g for g in grants}
+                grant_opts = {
+                    f"ID {g.get('Grant ID', g.get('GrantID'))} - {g.get('Grant Name', g.get('GrantName'))}": g
+                    for g in grants
+                }
                 sel_del_g = st.selectbox(
                     "Select Grant to Delete", options=list(grant_opts.keys()), key="del_g_sel"
                 )
                 sel_g = grant_opts[sel_del_g]
+                sel_grant_id = sel_g.get("Grant ID", sel_g.get("GrantID"))
+                sel_gname = sel_g.get("Grant Name", sel_g.get("GrantName"))
+                sel_agency = sel_g.get("Funding Agency", sel_g.get("FundingAgency"))
 
                 st.write(
-                    f"**ID:** {sel_g['GrantID']} | **Grant:** {sel_g['GrantName']} | "
-                    f"**Amount:** {format_currency(sel_g['Amount'])} | **Agency:** {sel_g['FundingAgency']}"
+                    f"**ID:** {sel_grant_id} | **Grant:** {sel_gname} | "
+                    f"**Amount:** {format_currency(sel_g['Amount'])} | **Agency:** {sel_agency}"
                 )
 
                 if st.button("Confirm Delete Grant", type="primary"):
-                    success, msg = db.delete_grant(sel_g["GrantID"])
+                    success, msg = db.delete_grant(sel_grant_id)
                     if success:
                         st.success(msg)
                         st.rerun()

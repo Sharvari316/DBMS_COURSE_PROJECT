@@ -10,6 +10,25 @@ from typing import Any, Dict, List, Optional, Tuple
 import mysql.connector
 from mysql.connector import errorcode
 
+# Load .env file automatically if present
+def _load_env_file():
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
+
+_load_env_file()
+
 # Default configuration settings - can be overridden via environment variables or runtime settings
 DB_CONFIG = {
     "host": os.environ.get("DB_HOST", "localhost"),
@@ -18,6 +37,7 @@ DB_CONFIG = {
     "password": os.environ.get("DB_PASSWORD", ""),
     "database": os.environ.get("DB_NAME", "ResearchManagement"),
 }
+
 
 
 def get_db_config() -> Dict[str, Any]:
@@ -715,19 +735,19 @@ def delete_publication(publication_id: int) -> Tuple[bool, str]:
 # ============================================================================
 
 def get_all_grants() -> List[Dict[str, Any]]:
-    """Retrieve all grants with associated project name."""
+    """Retrieve all grants with associated project name using distinct column aliases."""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
         query = """
             SELECT 
-                g.GrantID,
-                g.GrantName,
-                g.Amount,
-                g.FundingAgency,
-                g.ProjectID,
-                p.ProjectName
+                g.GrantID AS `Grant ID`,
+                g.GrantName AS `Grant Name`,
+                g.Amount AS `Amount`,
+                g.FundingAgency AS `Funding Agency`,
+                g.ProjectID AS `Project ID`,
+                p.ProjectName AS `Funded Project`
             FROM `Grant` g
             LEFT JOIN Project p ON g.ProjectID = p.ProjectID
             ORDER BY g.GrantID ASC;
